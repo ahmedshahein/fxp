@@ -16,18 +16,36 @@ This project is intended for **numerical modeling**, **DSP**, and **hardware-ori
 
 ---
 
+
 ## Repository Structure
 
 ```
-.
-├── fxp.m              % Fixed-point class definition
-├── vfxp.m             % Vectorized fixed-point conversion helper
-├── test_regression.m  % Regression and validation test suite
-└── README.md
+├── README.md
+├── vfxp.m
+├── test_regression.m
+└── @fxp
+    └── fxp.m
 ```
 
 ---
 
+## Installation (Bash)
+This is simple Bash script tht helps in downloading and setting up the fxp class.
+
+```bash
+#!/bin/bash
+
+PKG_PATH="/home/$USER/octave/fxp"
+GIT_PATH="https://github.com/ahmedshahein/fxp.git"
+
+git clone $GIT_PATH $PKG_PATH/@fxp
+
+cat <<EOF >> /home/$USER/.octaverc
+addpath('$PKG_PATH');
+rehash;
+EOF
+```
+---
 ## File Descriptions
 
 ### fxp.m
