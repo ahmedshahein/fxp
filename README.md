@@ -104,6 +104,40 @@ test_regression
 
 ---
 
+## Features
+### PROPERTIES:
+  vfxp        - Quantized fixed-point value
+  S           - Signedness (1=signed, 0=unsigned)
+  WL          - Word-length (total bits)
+  IL          - Integer-length (derived: WL - FL - S)
+  FL          - Fractional-length (bits for fraction)
+  max         - Maximum representable value
+  min         - Minimum representable value
+  res         - Resolution (2^-FL)
+  DR_dB       - Dynamic range in dB
+  dec         - Scaled integer representation
+  bin         - Binary array (2's complement)
+  bin_str     - Formatted binary string with decimal point
+  err         - Quantization error
+  ovf         - Overflow flag (1=overflow, 0=no overflow)
+
+### METHODS:
+  disp()      - Display complete fixed-point information
+  disp_bits() - Display detailed bit-level information
+  struct()    - Convert to struct with all fields
+  double()    - Convert to double precision
+  int32()     - Convert to int32
+  uint32()    - Convert to uint32
+  struct()    - Convert to struct
+
+### ARITHMETIC OPERATIONS:
+  +, -, *, /, mod
+  (with automatic result word-length adjustment)
+
+### COMPARISON OPERATIONS:
+  ==, ~=, <, <=, >, >=
+  ---
+  
 ## Basic Usage
 
 ### Scalar Conversion
