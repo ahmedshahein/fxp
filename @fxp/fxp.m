@@ -13,25 +13,28 @@
 classdef fxp
   % Define fxp object configuration, numeric values, and metadata
   properties
-    S          % Signedness
-    WL         % Word-length
-    IL         % Integer-length
-    FL         % Fraction-length
-    max        % Upper bound of fxp range
-    min        % Lower bound of fxp range
-    res        % Resolution of fxp configuration
-    DR_dB      % Dynamic Range in dB of fxp configuration
-    int        % Integer part of the fxp value
-    frac       % Fractional part of the fxp value
-    dec        % Integer representation of the fxp value
-    vfxp       % Quantized fxp Value based on fxp configuration
-    float      % Float/Double input value to be converted
-    bin        % Binary representation of fxp (array)
-    bin_str    % Binary representation of fxp with decimal point (string)
-    err        % Quantization error
-    ovf        % Flag indicates over-flow, 1==OVF
-    ovf_action % Overflow action: 'sat' or 'wrap'
-    rnd_method % Rounding method: 'round', 'fix', 'floor', 'ceil'
+    % Configuration (scalar)
+    S          = 0;       % Signedness
+    WL         = 0;       % Word-length
+    IL         = 0;       % Integer-length
+    FL         = 0;       % Fraction-length
+    ovf_action = 'wrap';  % Overflow action: 'sat' or 'wrap'
+    rnd_method = 'round'; % Rounding method: 'round', 'fix', 'floor', 'ceil'
+    % Derived Constants (scalar)
+    max        = 0;       % Upper bound of fxp range
+    min        = 0;       % Lower bound of fxp range
+    res        = 0;       % Resolution of fxp configuration
+    DR_dB      = 0;       % Dynamic Range in dB of fxp configuration
+    % Data (scalar or array)
+    int        = [];      % Integer part of the fxp value
+    frac       = [];      % Fractional part of the fxp value
+    dec        = [];      % Integer representation of the fxp value
+    vfxp       = [];      % Quantized fxp Value based on fxp configuration
+    float      = [];      % Float/Double input value to be converted
+    bin        = [];      % Binary representation of fxp (array)
+    bin_str    = [];      % Binary representation of fxp with decimal point (string)
+    err        = [];      % Quantization error
+    ovf        = [];      % Flag indicates over-flow, 1==OVF
   end %%properties
 
   % Define functions that accepts fxp
@@ -46,17 +49,14 @@ classdef fxp
         return
       end
 
-      % Default values
-      fxp_s	 = 1;
-      fxp_wl	 = 16;
-      fxp_fl	 = 8;
-      ovf_action = 'wrap';
-      rnd_method = 'round';
-	  
       if (nargin == 1)
         if (isnumeric(varargin{1}))
           disp("### INFO: Using default values for fixed-point configuration.");
           data       = varargin{1};
+          obj.S      = 1;
+          obj.WL     = 16;
+          obj.FL     = 8;
+          obj.IL     = obj.WL - obj.FL - obj.S;
         end
       elseif (nargin == 4)
         for i = 1 : numel(varargin)
@@ -65,10 +65,12 @@ classdef fxp
             return
           end
         end
+
         data       = varargin{1};
-        fxp_s      = varargin{2};
-        fxp_wl     = varargin{3};
-        fxp_fl     = varargin{4};
+        obj.S      = varargin{2};
+        obj.WL     = varargin{3};
+        obj.FL     = varargin{4};
+        obj.IL     = obj.WL - obj.FL - obj.S;
       elseif (nargin > 4)
         incr_idx = 0;
         for i = 1 : numel(varargin)
@@ -79,15 +81,15 @@ classdef fxp
                 case {'data'}
                   data = varargin{i+1};
                 case {'S'}
-                  fxp_s = varargin{i+1};
+                  obj.S = varargin{i+1};
                 case {'WL'}
-                  fxp_wl = varargin{i+1};
+                  obj.WL = varargin{i+1};
                 case {'FL'}
-                  fxp_fl = varargin{i+1};
+                  obj.FL = varargin{i+1};
                 case {'ovf_action'}
-                  ovf_action = varargin{i+1};
+                  obj.ovf_action = varargin{i+1};
                 case {'rnd_method'}
-                  rnd_method = varargin{i+1};
+                  obj.rnd_method = varargin{i+1};
                 otherwise
                   disp("ERR: Unrecongnized fxp configuration parameter.");
                   return
@@ -101,45 +103,41 @@ classdef fxp
               if     i == 1
                 data = varargin{i};
               elseif i == 2
-                fxp_s = varargin{i};
+                obj.S = varargin{i};
               elseif i == 3
-                fxp_wl = varargin{i};
+                obj.WL = varargin{i};
               elseif i == 4
-                fxp_fl = varargin{i};
+                obj.FL = varargin{i};
               else
                 incr_idx = 0;
-            end %%
+              end %%
             end %%if
           end %%ischar
         end %%for
+        obj.IL     = obj.WL - obj.FL - obj.S;
       end %%if
 
       % Validate signedness for negative numbers
-      if ( (fxp_s == 0) && (data < 0) )
-	disp('ERR: Cannot represent negative number in unsigned format');
-	return
+      % In case of unsigned numbers, report error
+      % if any of the input values are negative.
+      if (obj.S == 0) && (any(data(:) < 0))
+        disp('ERR: Cannot represent negative number in unsigned format');
+        return
       end
 
       % Common obj values for single or array input
       % Store configuration
-      obj.S          = fxp_s;
-      obj.WL         = fxp_wl;
-      obj.FL         = fxp_fl;
-      obj.IL         = fxp_wl - fxp_fl - fxp_s;
-      obj.ovf_action = ovf_action;
-      obj.rnd_method = rnd_method;
-
       % Calculate fixed-point parameters
-      obj.res        =  2^(-fxp_fl);
-      obj.max        =  2^obj.IL - 2^(-fxp_fl);
-      obj.min        = -2^obj.IL * fxp_s;
-      obj.DR_dB      =  6.02 * (fxp_wl - fxp_s);
-      
+      obj.res        =  2^(-obj.FL);
+      obj.max        =  2^obj.IL - 2^(-obj.FL);
+      obj.min        = -2^obj.IL * obj.S;
+      obj.DR_dB      =  6.02 * (obj.WL - obj.FL);
+
       % Quantize the input value
       obj = fxp_quantize(obj, data);
-      
+
     end %%fxp
-    
+
     % Core Quantization Function
     % Quantize Single Value
     function obj = fxp_quantize(obj, x)
@@ -173,14 +171,13 @@ classdef fxp
       obj.ovf = fxp_ovf;
 
       % Apply rounding
-      %%obj.dec     = round_fxp(x * 2^obj.FL, obj.rnd_method);
       obj.dec     = round(x * 2^obj.FL);
       obj.vfxp    = obj.dec / 2^obj.FL;
-      obj.int     = fix(abs(obj.vfxp));
-      obj.frac    = abs(obj.vfxp) - obj.int;
+      obj.int     = sign(obj.float) * fix(abs(obj.vfxp));
+      obj.frac    = abs(obj.vfxp) - abs(obj.int);
 
       % Generate binary representation (2's complement)
-      obj.bin     = de2bi(obj.S*2^obj.WL - (-sign(x) * abs(obj.dec)), obj.WL, 'left-msb');
+      obj.bin     = de2bi(obj.S*2^obj.WL - (-sign(obj.dec) .* abs(obj.dec)), obj.WL, 'left-msb');
       obj.bin_str = print_fxp_str(obj.bin, obj.S, obj.WL, obj.FL);
 
       % Calculate quantization error
@@ -194,12 +191,12 @@ classdef fxp
     function result = plus(obj1, obj2)
       if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
         if ~strcmp(obj1.ovf_action, obj2.ovf_action)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
         if ~strcmp(obj1.rnd_method, obj2.rnd_method)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
-    res_S    = max(obj1.S, obj2.S);
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        res_S    = max(obj1.S, obj2.S);
         res_WL   = max(obj1.WL, obj2.WL) + 1;
         res_FL   = max(obj1.FL, obj2.FL);
         res_vfxp = obj1.vfxp + obj2.vfxp;
@@ -213,12 +210,12 @@ classdef fxp
     function result = minus(obj1, obj2)
       if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
         if ~strcmp(obj1.ovf_action, obj2.ovf_action)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
+        error("ERR: Oveflow action of both operands is not identical.");
+        end
         if ~strcmp(obj1.rnd_method, obj2.rnd_method)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
-    res_S    = max(obj1.S, obj2.S);
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        res_S    = max(obj1.S, obj2.S);
         res_WL   = max(obj1.WL, obj2.WL) + 1;
         res_FL   = max(obj1.FL, obj2.FL);
         res_vfxp = obj1.vfxp - obj2.vfxp;
@@ -232,12 +229,12 @@ classdef fxp
     function result = mtimes(obj1, obj2)
       if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
         if ~strcmp(obj1.ovf_action, obj2.ovf_action)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
         if ~strcmp(obj1.rnd_method, obj2.rnd_method)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
-    res_S    = max(obj1.S, obj2.S);
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        res_S    = max(obj1.S, obj2.S);
         res_WL   = obj1.WL + obj2.WL;
         res_FL   = obj1.FL + obj2.FL;
         res_vfxp = obj1.vfxp * obj2.vfxp;
@@ -251,15 +248,15 @@ classdef fxp
     function result = mrdivide(obj1, obj2)
       if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
         if ~strcmp(obj1.ovf_action, obj2.ovf_action)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
         if ~strcmp(obj1.rnd_method, obj2.rnd_method)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
-    res_S    = max(obj1.S, obj2.S);
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        res_S    = max(obj1.S, obj2.S);
         res_IL   = obj1.IL + obj2.FL + max(obj1.S, obj2.S);
         res_FL   = obj2.IL + obj1.FL;
-    res_WL   = res_IL + res_FL;
+        res_WL   = res_IL + res_FL;
         res_vfxp = obj1.vfxp / obj2.vfxp;
         result   = fxp(res_vfxp, res_S, res_WL, res_FL, 'ovf_action', obj1.ovf_action, 'rnd_method', obj1.rnd_method);
       else
@@ -271,15 +268,15 @@ classdef fxp
     function result = mod(obj1, obj2)
       if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
         if ~strcmp(obj1.ovf_action, obj2.ovf_action)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
         if ~strcmp(obj1.rnd_method, obj2.rnd_method)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
-    res_S    = max(obj1.S, obj2.S);
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        res_S    = max(obj1.S, obj2.S);
         res_IL   = obj1.IL + obj2.FL + max(obj1.S, obj2.S);
         res_FL   = obj2.IL + obj1.FL;
-    res_WL   = res_IL + res_FL;
+        res_WL   = res_IL + res_FL;
         res_vfxp = mod(obj1.vfxp, obj2.vfxp);
         result   = fxp(res_vfxp, res_S, res_WL, res_FL, 'ovf_action', obj1.ovf_action, 'rnd_method', obj1.rnd_method);
       else
@@ -294,12 +291,12 @@ classdef fxp
     function result = eq(obj1, obj2)
       if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
         if ~strcmp(obj1.ovf_action, obj2.ovf_action)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
         if ~strcmp(obj1.rnd_method, obj2.rnd_method)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
-    result = (obj1.vfxp == obj2.vfxp);
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        result = (obj1.vfxp == obj2.vfxp);
       else
         error("ERR: Both addition arguments shall be fxp.");
       end
@@ -309,12 +306,12 @@ classdef fxp
     function result = ne(obj1, obj2)
       if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
         if ~strcmp(obj1.ovf_action, obj2.ovf_action)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
         if ~strcmp(obj1.rnd_method, obj2.rnd_method)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
-    result = ~eq(obj1, obj2);
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        result = ~eq(obj1, obj2);
       else
         error("ERR: Both addition arguments shall be fxp.");
       end
@@ -324,12 +321,12 @@ classdef fxp
     function result = lt(obj1, obj2)
       if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
         if ~strcmp(obj1.ovf_action, obj2.ovf_action)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
         if ~strcmp(obj1.rnd_method, obj2.rnd_method)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
-    result = (obj1.vfxp < obj2.vfxp);
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        result = (obj1.vfxp < obj2.vfxp);
       else
         error("ERR: Both addition arguments shall be fxp.");
       end
@@ -339,12 +336,12 @@ classdef fxp
     function result = le(obj1, obj2)
       if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
         if ~strcmp(obj1.ovf_action, obj2.ovf_action)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
         if ~strcmp(obj1.rnd_method, obj2.rnd_method)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
-    result = (obj1.vfxp <= obj2.vfxp);
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        result = (obj1.vfxp <= obj2.vfxp);
       else
         error("ERR: Both addition arguments shall be fxp.");
       end
@@ -354,12 +351,12 @@ classdef fxp
     function result = gt(obj1, obj2)
       if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
         if ~strcmp(obj1.ovf_action, obj2.ovf_action)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
         if ~strcmp(obj1.rnd_method, obj2.rnd_method)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
-    result = (obj1.vfxp > obj2.vfxp);
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        result = (obj1.vfxp > obj2.vfxp);
       else
         error("ERR: Both addition arguments shall be fxp.");
       end
@@ -369,12 +366,12 @@ classdef fxp
     function result = ge(obj1, obj2)
       if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
         if ~strcmp(obj1.ovf_action, obj2.ovf_action)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
         if ~strcmp(obj1.rnd_method, obj2.rnd_method)
-      error("ERR: Oveflow action of both operands is not identical.");
-    end
-    result = (obj1.vfxp >= obj2.vfxp);
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        result = (obj1.vfxp >= obj2.vfxp);
       else
         error("ERR: Both addition arguments shall be fxp.");
       end
@@ -418,7 +415,7 @@ classdef fxp
       % Usage:
       %   f = fxp(3.14, 1, 16, 8);
       %   s = struct(f);
-    
+
       s = struct();
       s.vfxp       = obj.vfxp;
       s.S          = obj.S;
@@ -446,13 +443,15 @@ classdef fxp
     function disp(obj)
       % Display fixed-point object
       fprintf('\n Fixed-Point (fxp) Object:\n');
-      fprintf(' %-18s: %g\n', 'Value', obj.vfxp);
       fprintf(' %-18s: %d-bit, Sign=%d, Int=%d, Frac=%d\n', ...
           'Config', obj.WL, obj.S, obj.IL, obj.FL);
       fprintf(' %-18s: [%g, %g]\n', 'Range', obj.min, obj.max);
       fprintf(' %-18s: %g\n', 'Resolution', obj.res);
-      fprintf(' %-18s: %.2f dB\n', 'Dynamic Range', obj.DR_dB);
-      fprintf(' %-15s: %g\n', 'Quantization Error', obj.err);
+      fprintf(' %-18s: %.2f dB\n', 'Dynamic Range:', obj.DR_dB);
+      fprintf(' %-18s: %g\n', 'Value');
+      disp(obj.vfxp);
+      fprintf(' %-15s: %g\n', 'Quantization Error:');
+      disp(obj.err);
       fprintf(' %-18s: %s\n', 'Binary', obj.bin_str);
       fprintf(' %-18s: %d\n', 'Overflow', obj.ovf);
       fprintf('\n');
