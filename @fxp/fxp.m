@@ -75,7 +75,6 @@ classdef fxp
         incr_idx = 0;
         for i = 1 : numel(varargin)
           if ischar(varargin{i}) && (incr_idx == 0)
-            %for i = 1 : 2 : numel(varargin)
               variable = varargin{i};
               switch (variable)
                 case {'data'}
