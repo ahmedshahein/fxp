@@ -82,32 +82,68 @@ def read_meta(meta_path):
             })
     return rows
 
-def run_fir(outdir):
-    fmeta = outdir / "filter_meta.csv"
-    if not fmeta.exists():
-        raise SystemExit("Missing filter_meta.csv for FIR testcase")
+def _read_filter_meta(fmeta_path):
+    """Read FIR metadata.
 
-    cfg = {}
-    with fmeta.open("r", newline="") as f:
+    Supports two formats:
+      (A) Legacy:
+          name,signed,n_word,n_frac,overflow,rounding
+      (B) Multi-testcase:
+          tc_id,name,signed,n_word,n_frac,overflow,rounding
+    """
+    with fmeta_path.open("r", newline="") as f:
         r = csv.DictReader(f)
+        fns = [s.strip().lower() for s in (r.fieldnames or [])]
+        has_tc = "tc_id" in fns
+
+        rows = []
         for row in r:
-            name = row["name"].strip().lower()
-            cfg[name] = {
+            if has_tc:
+                tc_id = int(row["tc_id"])
+            else:
+                tc_id = 10  # legacy default
+            rows.append({
+                "tc_id": tc_id,
+                "name": row["name"].strip().lower(),
                 "signed": int(row["signed"]),
                 "n_word": int(row["n_word"]),
                 "n_frac": int(row["n_frac"]),
                 "overflow": row["overflow"].strip(),
                 "rounding": row["rounding"].strip(),
-            }
+            })
+    return rows
 
-    b = read_vector_csv(outdir / "tc_10_b.csv")
-    x = read_vector_csv(outdir / "tc_10_x.csv")
+
+def run_fir(outdir, tc_id):
+    fmeta = outdir / "filter_meta.csv"
+    if not fmeta.exists():
+        raise SystemExit("Missing filter_meta.csv for FIR testcase")
+
+    cfg_rows = _read_filter_meta(fmeta)
+    cfg = {"b": None, "x": None}
+    for row in cfg_rows:
+        if int(row["tc_id"]) != int(tc_id):
+            continue
+        name = row["name"]
+        cfg[name] = {
+            "signed": row["signed"],
+            "n_word": row["n_word"],
+            "n_frac": row["n_frac"],
+            "overflow": row["overflow"],
+            "rounding": row["rounding"],
+        }
+
+    if cfg["b"] is None or cfg["x"] is None:
+        raise SystemExit(f"filter_meta.csv missing FIR config for tc_id={tc_id} (need rows for name=b and name=x)")
+
+    b = read_vector_csv(outdir / f"tc_{tc_id}_b.csv")
+    x = read_vector_csv(outdir / f"tc_{tc_id}_x.csv")
 
     bq, _ = quantize(b, **cfg["b"])
     xq, _ = quantize(x, **cfg["x"])
 
     y = np.convolve(xq, bq, mode="full")[: xq.shape[0]]
-    write_vector_csv(outdir / "tc_10_y_py.csv", y)
+    write_vector_csv(outdir / f"tc_{tc_id}_y_py.csv", y)
 
 def main():
     if len(sys.argv) != 2:
@@ -143,7 +179,7 @@ def main():
             write_vector_csv(outdir / "tc_{}_py_err.csv".format(tc_id), e)
 
         elif op == "fir":
-            run_fir(outdir)
+            run_fir(outdir, tc_id)
 
     return 0
 
