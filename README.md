@@ -21,7 +21,10 @@ Recommended layout for GNU Octave classes:
 fxp/
 ├─ @fxp/
 │  └─ fxp.m
-├─ test_regression.m
+├─ testing
+|  └─ test_regression.m
+|  └─ test_regression_py_copare.m
+|  └─ run_fxpmath_ref.py
 └─ README.md
 ```
 
