@@ -109,38 +109,86 @@ fidm = fopen(meta_path, "w");
 if fidm < 0, error("Cannot open meta.csv for write"); end
 write_meta_header(fidm);
 
-% NOTE: These are placeholders. Replace with your exact stimuli as needed.
-tc_list = [3 4 5 6 7];
-x_list  = [3.14 0.97234 22/7 0.0 -0.0];
-for t = 1:numel(tc_list)
-  tc_id = tc_list(t);
-  x = x_list(t);
+% -----------------------------------------------------------------
+% Stimuli aligned to test_regression.m (tc3..tc13). The goal here is
+% to compare NUMERICAL FIXED-POINT results (vfxp + err) against a
+% Python (fxpmath) golden reference.
+%
+% Notes:
+%  - tc1/tc2 focus on input validation behavior, not numerical output.
+%  - tc3..tc8 are scalar quantize checks with different API variants.
+%  - tc9..tc10 are vector quantize checks.
+%  - tc11 is an FIR/filtering check using Octave-generated b (fir1)
+%    and deterministic random stimulus.
+%  - tc12/tc13 exercise wrap-around for signed/unsigned.
+% -----------------------------------------------------------------
+
+% tc3..tc8: scalar quantize (22/7)
+x = 22/7;
+for tc_id = 3:6
   write_csv_vector(fullfile(outdir, sprintf("tc_%d_x.csv", tc_id)), x);
+  % Default configuration used in test_regression.m for these cases
   write_meta_row(fidm, tc_id, "quantize", 0, 10, 7, "sat", "round");
 end
 
-x = linspace(-2.0, 2.0, 401);
+% tc7: ceil rounding
+write_csv_vector(fullfile(outdir, "tc_7_x.csv"), x);
+write_meta_row(fidm, 7, "quantize", 0, 10, 7, "sat", "ceil");
+
+% tc8: sat + round
 write_csv_vector(fullfile(outdir, "tc_8_x.csv"), x);
-write_meta_row(fidm, 8, "quantize", 1, 12, 9, "sat", "round");
+write_meta_row(fidm, 8, "quantize", 0, 10, 7, "sat", "round");
 
-n = 0:1023;
-x = 0.95 * sin(2*pi*17*n/1024);
+% tc9: array quantize, no overflow
+x = -2:0.1:2;
 write_csv_vector(fullfile(outdir, "tc_9_x.csv"), x);
-write_meta_row(fidm, 9, "quantize", 1, 12, 10, "sat", "round");
+write_meta_row(fidm, 9, "quantize", 1, 10, 6, "sat", "round");
 
-b = [0.05 0.1 0.15 0.4 0.15 0.1 0.05];
-x = randn(1, 2048) * 0.25;
-write_csv_vector(fullfile(outdir, "tc_10_b.csv"), b);
+% tc10: sinusoidal quantize, overflow expected (default wrap in fxp)
+fs = 1e6;
+fo = 30e3;
+cycles = 4;
+n = fix(fs/fo) * cycles;
+t = (0:n-1)./fs;
+x = 1.1*sin(2*pi*fo*t);
 write_csv_vector(fullfile(outdir, "tc_10_x.csv"), x);
+write_meta_row(fidm, 10, "quantize", 1, 10, 9, "wrap", "round");
 
+% tc11: FIR/filtering check
+%   b = fir1(5, fo/fs);
+%   b_fxp = fxp(b, 0, 10, 10);
+%   r_fxp = fxp(r, 1, 12, 9);
+%   y = filter(b_fxp.vfxp, 1, r_fxp.vfxp);
+
+% Deterministic random stimulus (avoid run-to-run diffs)
+rand("seed", 0);
+randn("seed", 0);
+r_min = -2;
+r_max =  2;
+r = r_min + (r_max - r_min) .* rand(1, 2^10);
+b = fir1(5, fo/fs);
+write_csv_vector(fullfile(outdir, "tc_11_b.csv"), b);
+write_csv_vector(fullfile(outdir, "tc_11_x.csv"), r);
+
+% filter_meta.csv supports multi-testcase FIR configs
 fmeta = fopen(fullfile(outdir, "filter_meta.csv"), "w");
 if fmeta < 0, error("Cannot open filter_meta.csv"); end
-fprintf(fmeta, "name,signed,n_word,n_frac,overflow,rounding\n");
-fprintf(fmeta, "b,0,10,10,sat,round\n");
-fprintf(fmeta, "x,1,12,9,sat,round\n");
+fprintf(fmeta, "tc_id,name,signed,n_word,n_frac,overflow,rounding\n");
+fprintf(fmeta, "11,b,0,10,10,sat,round\n");
+fprintf(fmeta, "11,x,1,12,9,sat,round\n");
 fclose(fmeta);
 
-write_meta_row(fidm, 10, "fir", 0, 0, 0, "sat", "round");
+write_meta_row(fidm, 11, "fir", 0, 0, 0, "sat", "round");
+
+% tc12: signed wrap-around
+x = -20:0.1:20;
+write_csv_vector(fullfile(outdir, "tc_12_x.csv"), x);
+write_meta_row(fidm, 12, "quantize", 1, 10, 6, "wrap", "round");
+
+% tc13: unsigned wrap-around
+x = -20:0.1:20;
+write_csv_vector(fullfile(outdir, "tc_13_x.csv"), x);
+write_meta_row(fidm, 13, "quantize", 0, 10, 6, "wrap", "round");
 fclose(fidm);
 
 % ----------------------------
@@ -166,7 +214,7 @@ fails = 0;
 
 fprintf(fidr, "\n==== Comparison Results ====\n");
 
-for tc_id = [3 4 5 6 7 8 9]
+for tc_id = [3 4 5 6 7 8 9 10 12 13]
   total += 1;
   try
     x = read_csv_vector(fullfile(outdir, sprintf("tc_%d_x.csv", tc_id)));
@@ -217,31 +265,31 @@ for tc_id = [3 4 5 6 7 8 9]
   end_try_catch
 end
 
-% FIR tc10
+% FIR tc11
 total += 1;
 try
-  b  = read_csv_vector(fullfile(outdir, "tc_10_b.csv"));
-  x  = read_csv_vector(fullfile(outdir, "tc_10_x.csv"));
+  b  = read_csv_vector(fullfile(outdir, "tc_11_b.csv"));
+  x  = read_csv_vector(fullfile(outdir, "tc_11_x.csv"));
 
   [bq, ~] = octave_quantize_vec(b, 0, 10, 10, "sat", "round");
   [xq, ~] = octave_quantize_vec(x, 1, 12, 9,  "sat", "round");
 
   y_oct = filter(bq(:).', 1, xq(:).');
-  y_py  = read_csv_vector(fullfile(outdir, "tc_10_y_py.csv")).';
+  y_py  = read_csv_vector(fullfile(outdir, "tc_11_y_py.csv")).';
 
-  [p, m] = compare_vectors_soft("tc10 y", y_oct(:), y_py(:), ABS_TOL, REL_TOL);
+  [p, m] = compare_vectors_soft("tc11 y", y_oct(:), y_py(:), ABS_TOL, REL_TOL);
   if p
-    fprintf("tc10: PASS\n");
-    fprintf(fidr, "tc10: PASS\n");
+    fprintf("tc11: PASS\n");
+    fprintf(fidr, "tc11: PASS\n");
   else
     fails += 1;
-    fprintf("tc10: FAIL\n");
-    fprintf(fidr, "tc10: FAIL\n  - %s\n", m);
+    fprintf("tc11: FAIL\n");
+    fprintf(fidr, "tc11: FAIL\n  - %s\n", m);
   end
 catch err
   fails += 1;
-  fprintf("tc10: ERROR (%s)\n", err.message);
-  fprintf(fidr, "tc10: ERROR (%s)\n", err.message);
+  fprintf("tc11: ERROR (%s)\n", err.message);
+  fprintf(fidr, "tc11: ERROR (%s)\n", err.message);
 end_try_catch
 
 fprintf(fidr, "\nSummary: %d total, %d failed\n", total, fails);
