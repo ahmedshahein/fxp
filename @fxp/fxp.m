@@ -75,6 +75,7 @@ classdef fxp
         incr_idx = 0;
         for i = 1 : numel(varargin)
           if ischar(varargin{i}) && (incr_idx == 0)
+            %for i = 1 : 2 : numel(varargin)
               variable = varargin{i};
               switch (variable)
                 case {'data'}
@@ -120,8 +121,9 @@ classdef fxp
       % In case of unsigned numbers, report error
       % if any of the input values are negative.
       if (obj.S == 0) && (any(data(:) < 0))
-        disp('ERR: Cannot represent negative number in unsigned format');
-        return
+        disp('WRN: Negative value is assigned to unsigned fixed-point data-type.');
+        disp('     The overflow action will be applied.');
+        #return
       end
 
       % Common obj values for single or array input
@@ -140,39 +142,60 @@ classdef fxp
     % Core Quantization Function
     % Quantize Single Value
     function obj = fxp_quantize(obj, x)
-      % Check for over-flow
-      if ( (x > obj.max) || (x < obj.min) )
-        fxp_ovf = 1;
-      else
-        fxp_ovf = 0;
-      end
-
+      % Preserve float input
       obj.float = x;
 
-      if (fxp_ovf == 1)
-        if strcmp(obj.ovf_action, 'sat')
-          if (x >= 0)
-            x = obj.max;
-          elseif (x < 0)
-            x = obj.min;
-          end
-        elseif strcmp(obj.ovf_action, 'wrap')
-          if (x >= 0)
-            x = obj.max - x;
-          elseif (x < 0)
-            x = obj.min - x;
-          end
-        end
-      else
-        x = x;
-      end
+      % overflow detection (array-safe)
+      ovf_mask = (x > obj.max) | (x < obj.min);
+      obj.ovf  = ovf_mask;
 
-      obj.ovf = fxp_ovf;
+      xq = x;
+
+      if any(ovf_mask(:))
+        if strcmp(obj.ovf_action,'sat')
+          xq(x > obj.max) = obj.max;
+          xq(x < obj.min) = obj.min;
+        elseif strcmp(obj.ovf_action,'wrap')
+          % 1) Quantize to integer raw (array-safe)
+          scale = 2^obj.FL;
+          xs    = xq .* scale;
+
+          switch lower(obj.rnd_method)
+            case "round"
+              raw = round(xs);
+            case "floor"
+              raw = floor(xs);
+            case "ceil"
+              raw = ceil(xs);
+            case "fix"
+              raw = fix(xs);
+            otherwise
+              error("fxp_wrap: unsupported rnd_method '%s'", rnd_method);
+          end %% swicth
+          % Use integer math where possible
+          M = 2^obj.WL;
+
+          % 2) Wrap to WL bits: [0 .. M-1]
+          raw_mod = mod(raw, M);
+
+          % 3) Interpret as signed (two's complement) if requested
+          if obj.S
+            sign_bit = 2^(obj.WL-1);
+            raw_mod(raw_mod >= sign_bit) = raw_mod(raw_mod >= sign_bit) - M;
+          end
+
+          raww = raw_mod;
+
+          % 4) Convert back to real scaled value
+          xw = raww ./ scale;
+          xq = xw;
+        end %% if sat
+      end %% if any ovf_mask
 
       % Apply rounding
-      obj.dec     = round(x * 2^obj.FL);
+      obj.dec     = round(xq * 2^obj.FL);
       obj.vfxp    = obj.dec / 2^obj.FL;
-      obj.int     = sign(obj.float) * fix(abs(obj.vfxp));
+      obj.int     = sign(obj.float) .* fix(abs(obj.vfxp));
       obj.frac    = abs(obj.vfxp) - abs(obj.int);
 
       % Generate binary representation (2's complement)
@@ -180,7 +203,7 @@ classdef fxp
       obj.bin_str = print_fxp_str(obj.bin, obj.S, obj.WL, obj.FL);
 
       % Calculate quantization error
-      obj.err     = abs(x - obj.vfxp);
+      obj.err     = abs(xq - obj.vfxp);
     end %%fxp_quantize
 
     %% ---------------------
@@ -444,12 +467,11 @@ classdef fxp
       fprintf('\n Fixed-Point (fxp) Object:\n');
       fprintf(' %-18s: %d-bit, Sign=%d, Int=%d, Frac=%d\n', ...
           'Config', obj.WL, obj.S, obj.IL, obj.FL);
-      fprintf(' %-18s: [%g, %g]\n', 'Range', obj.min, obj.max);
+      fprintf(' %-18s: [%g, %.*f]\n', 'Range', obj.min, obj.FL, obj.max);
       fprintf(' %-18s: %g\n', 'Resolution', obj.res);
       fprintf(' %-18s: %.2f dB\n', 'Dynamic Range:', obj.DR_dB);
-      fprintf(' %-18s: %g\n', 'Value');
-      disp(obj.vfxp);
-      fprintf(' %-15s: %g\n', 'Quantization Error:');
+      fprintf(' %-18s: %.*f\n', 'Value', obj.FL, obj.vfxp);
+      fprintf(' %-15s: %g\n', 'Quantization Error');
       disp(obj.err);
       fprintf(' %-18s: %s\n', 'Binary', obj.bin_str);
       fprintf(' %-18s: %d\n', 'Overflow', obj.ovf);
