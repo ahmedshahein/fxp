@@ -23,7 +23,7 @@ fxp/
 │  └─ fxp.m
 ├─ testing
 |  └─ test_regression.m
-|  └─ test_regression_py_copare.m
+|  └─ test_regression_py_compare.m
 |  └─ run_fxpmath_ref.py
 └─ README.md
 ```
