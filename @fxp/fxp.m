@@ -160,8 +160,8 @@ classdef fxp
           % 1) Quantize to integer raw (array-safe)
           scale = 2^obj.FL;
           xs    = xq .* scale;
-	  raw   = fxp.round_fxp(xs, obj.rnd_method);
-	  
+          raw   = fxp.round_fxp(xs, obj.rnd_method);
+
           % Use integer math where possible
           M = 2^obj.WL;
 
@@ -183,7 +183,7 @@ classdef fxp
       end %% if any ovf_mask
 
       % Apply rounding
-      obj.dec     = round(xq * 2^obj.FL);
+      obj.dec     = fxp.round_fxp(xq * 2^obj.FL, obj.rnd_method);
       obj.vfxp    = obj.dec / 2^obj.FL;
       obj.int     = sign(obj.float) .* fix(abs(obj.vfxp));
       obj.frac    = abs(obj.vfxp) - abs(obj.int);
@@ -257,6 +257,24 @@ classdef fxp
         error("ERR: Both addition arguments shall be fxp.");
       end
     end %%mtimes
+    
+    function result = times(obj1, obj2)
+      if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
+        if ~strcmp(obj1.ovf_action, obj2.ovf_action)
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        if ~strcmp(obj1.rnd_method, obj2.rnd_method)
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        res_S    = max(obj1.S, obj2.S);
+        res_WL   = obj1.WL + obj2.WL;
+        res_FL   = obj1.FL + obj2.FL;
+        res_vfxp = obj1.vfxp .* obj2.vfxp;
+        result   = fxp(res_vfxp, res_S, res_WL, res_FL, 'ovf_action', obj1.ovf_action, 'rnd_method', obj1.rnd_method);
+      else
+        error("ERR: Both addition arguments shall be fxp.");
+      end
+    end %%mtimes    
 
     % Division
     function result = mrdivide(obj1, obj2)
@@ -277,6 +295,25 @@ classdef fxp
         error("ERR: Both addition arguments shall be fxp.");
       end
     end %%rdivide
+    
+    function result = rdivide(obj1, obj2)
+      if ( (isa(obj1, 'fxp')) && (isa(obj2, 'fxp')) )
+        if ~strcmp(obj1.ovf_action, obj2.ovf_action)
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        if ~strcmp(obj1.rnd_method, obj2.rnd_method)
+          error("ERR: Oveflow action of both operands is not identical.");
+        end
+        res_S    = max(obj1.S, obj2.S);
+        res_IL   = obj1.IL + obj2.FL + max(obj1.S, obj2.S);
+        res_FL   = obj2.IL + obj1.FL;
+        res_WL   = res_IL + res_FL;
+        res_vfxp = obj1.vfxp ./ obj2.vfxp;
+        result   = fxp(res_vfxp, res_S, res_WL, res_FL, 'ovf_action', obj1.ovf_action, 'rnd_method', obj1.rnd_method);
+      else
+        error("ERR: Both addition arguments shall be fxp.");
+      end
+    end %%rdivide    
 
     % Modulo
     function result = mod(obj1, obj2)
@@ -298,7 +335,7 @@ classdef fxp
       end
     end %%mod
   end %% methods arithmetic
-  
+
   %% =====================================================================
   %% Comparison Operators
   %% =====================================================================
@@ -403,7 +440,7 @@ classdef fxp
       result = fxp(-obj.vfxp, obj.S, obj.WL, obj.FL, 'overflow', obj.ovf_action, 'rounding', obj.rnd_method);
     end %%uminus
   end %% Logical
-  
+
   %% =====================================================================
   %% Conversion
   %% =====================================================================
@@ -457,7 +494,7 @@ classdef fxp
       s.rnd_method = obj.rnd_method;
     end
   end %% methods conversion
-  
+
   %% =====================================================================
   %% Display
   %% =====================================================================
@@ -486,7 +523,7 @@ classdef fxp
 
   %% =====================================================================
   %% Helper Functions
-  %% ===================================================================== 
+  %% =====================================================================
   methods (Static)
     % Wrapper for rounding schemes support for fxp Class.
     % round == round away from 0
@@ -508,7 +545,7 @@ classdef fxp
           rounded = round(val);
       end
     end
-    
+
     % Print binary vector as string indicating decimal point.
     % It supports +ve and -ve fraction length, automatic padding.
     % It supports 2's complement.
@@ -518,7 +555,7 @@ classdef fxp
         return
         disp("### ERR: Word-length do not match the summation of integer and fractional length");
       end
-    
+
       % No fractional part
       % il shall be larger than wl
       if fl < 0
@@ -538,11 +575,11 @@ classdef fxp
         int_bin = fxp_bin(1:il+s);
         frc_bin = fxp_bin(il+s+1:end);
       endif
-    
+
       bin_str = strrep(strcat(num2str(int_bin),'.',num2str(frc_bin)),' ' ,'');
-    
-    end  
+
+    end
   end %% methods helper
-  
+
 end %%classdef
 % EOF
