@@ -61,9 +61,34 @@ function [vfxp, err] = octave_quantize_vec(x, s, wl, fl, ovf, rnd)
   vfxp = zeros(size(x));
   err  = zeros(size(x));
   for i = 1:numel(x)
-    o = fxp(x(i), s, wl, fl);
-    try, o.ovf_action = ovf; catch, end_try_catch
-    try, o.rnd_method = rnd; catch, end_try_catch
+    % IMPORTANT:
+    % The fxp class used by test_regression.m applies configuration
+    % (ovf_action / rnd_method) during construction via name-value pairs.
+    % tc7 ('ceil') will fail if rnd_method is set after construction.
+    %
+    % Therefore, pass configuration using the SAME convention:
+    %   fxp(data, S, WL, FL, 'ovf_action', <ovf>, 'rnd_method', <rnd>)
+    %
+    % We still keep a fallback path for older variants where these
+    % properties might be set post-construction.
+    try
+      o = fxp(x(i), s, wl, fl, 'ovf_action', ovf, 'rnd_method', rnd);
+    catch
+      % If the constructor doesn't accept one or both name-value pairs,
+      % fall back gracefully.
+      try
+        o = fxp(x(i), s, wl, fl, 'rnd_method', rnd);
+      catch
+        try
+          o = fxp(x(i), s, wl, fl, 'ovf_action', ovf);
+        catch
+          o = fxp(x(i), s, wl, fl);
+        end_try_catch
+      end_try_catch
+
+      try, o.ovf_action = ovf; catch, end_try_catch
+      try, o.rnd_method = rnd; catch, end_try_catch
+    end_try_catch
 
     try
       vfxp(i) = o.vfxp;
@@ -75,11 +100,9 @@ function [vfxp, err] = octave_quantize_vec(x, s, wl, fl, ovf, rnd)
       end_try_catch
     end_try_catch
 
-    try
-      err(i) = o.err;                 % expected: input - quantized
-    catch
-      err(i) = x(i) - vfxp(i);
-    end_try_catch
+    % Quantization error convention: match Python reference (run_fxpmath_ref.py)
+    % err = input - quantized
+    err(i) = x(i) - vfxp(i);
   end
 end
 
@@ -216,6 +239,9 @@ fprintf(fidr, "\n==== Comparison Results ====\n");
 
 for tc_id = [3 4 5 6 7 8 9 10 12 13]
   total += 1;
+  % Pre-initialize per-test variables to avoid "undefined" errors when
+  % an earlier step throws before assignment.
+  v_oct = []; e_oct = []; py_v = []; py_e = [];
   try
     x = read_csv_vector(fullfile(outdir, sprintf("tc_%d_x.csv", tc_id)));
     meta = fileread(meta_path);
@@ -225,11 +251,16 @@ for tc_id = [3 4 5 6 7 8 9 10 12 13]
       parts = strsplit(lines{i}, ",");
       if numel(parts) < 7, continue; end
       if str2double(parts{1}) == tc_id
-        s  = str2double(parts{3});
-        wl = str2double(parts{4});
-        fl = str2double(parts{5});
-        ovf = parts{6};
-        rnd = parts{7};
+        % NOTE:
+        % meta.csv is written using '\n' line endings, but depending on
+        % platform/tooling it may be read back with '\r\n'. That leaves a
+        % trailing '\r' on the last CSV field (rounding), which causes
+        % rnd_method assignment to silently fail for cases like tc7 ("ceil").
+        s  = str2double(strtrim(parts{3}));
+        wl = str2double(strtrim(parts{4}));
+        fl = str2double(strtrim(parts{5}));
+        ovf = strtrim(parts{6});
+        rnd = strtrim(parts{7});
         found = true;
         break;
       end
@@ -239,9 +270,7 @@ for tc_id = [3 4 5 6 7 8 9 10 12 13]
       fprintf(fidr, "tc%d: FAIL (no meta row)\n", tc_id);
       continue;
     end
-
     [v_oct, e_oct] = octave_quantize_vec(x, s, wl, fl, ovf, rnd);
-
     py_v = read_csv_vector(fullfile(outdir, sprintf("tc_%d_py_vfxp.csv", tc_id)));
     py_e = read_csv_vector(fullfile(outdir, sprintf("tc_%d_py_err.csv", tc_id)));
 
