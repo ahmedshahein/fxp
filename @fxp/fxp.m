@@ -94,7 +94,7 @@ classdef fxp
                 otherwise
                   disp("ERR: Unrecongnized fxp configuration parameter.");
                   return
-              endswitch
+              end
               incr_idx = 1;
           else
             if incr_idx == 1
@@ -189,7 +189,8 @@ classdef fxp
       obj.frac    = abs(obj.vfxp) - abs(obj.int);
 
       % Generate binary representation (2's complement)
-      obj.bin     = de2bi(obj.S*2^obj.WL - (-sign(obj.dec) .* abs(obj.dec)), obj.WL, 'left-msb');
+      %obj.bin     = de2bi(obj.S*2^obj.WL - (-sign(obj.dec) .* abs(obj.dec)), obj.WL, 'left-msb');
+      obj.bin     = fxp.dec2bit(obj.S*2^obj.WL - (-sign(obj.dec) .* abs(obj.dec)), obj.WL, 'left-msb');      
       obj.bin_str = fxp.print_fxp_str(obj.bin, obj.S, obj.WL, obj.FL);
 
       % Calculate quantization error
@@ -435,7 +436,6 @@ classdef fxp
   %% Unary
   %% =====================================================================
   methods
-    % Negation
     function result = uminus(obj)
       result = fxp(-obj.vfxp, obj.S, obj.WL, obj.FL, 'overflow', obj.ovf_action, 'rounding', obj.rnd_method);
     end %%uminus
@@ -551,7 +551,7 @@ classdef fxp
     % It supports 2's complement.
     function bin_str = print_fxp_str(fxp_bin, s, wl, fl)
       il = wl - fl - s;
-      if ( (il+fl+s) != wl )
+      if ( (il+fl+s) ~= wl )
         return
         disp("### ERR: Word-length do not match the summation of integer and fractional length");
       end
@@ -574,10 +574,35 @@ classdef fxp
       else
         int_bin = fxp_bin(1:il+s);
         frc_bin = fxp_bin(il+s+1:end);
-      endif
+      end
 
       bin_str = strrep(strcat(num2str(int_bin),'.',num2str(frc_bin)),' ' ,'');
 
+    end
+
+    function y = dec2bit(x,n,msbfirst)
+    % Usage: y = dec2bit(x,n,msbfirst)
+    %
+    %  x...........unsigned integer [0,2^64)
+    %  n...........scalar number of bits
+    %  msbfirst....if nonzero, left-justify msb
+    %  y...........row vector of bits
+    %
+    % Author: Angelito Hamm (@Lito844)
+      for i = 1 : length(x)
+        x64    = uint64(x(i));
+        y(i,:) = zeros(1,n);
+        kk     = n;
+        while x64 ~= 0 && kk
+          y(i,kk) = bitand(x64,1);
+          x64	  = bitshift(x64,-1);
+          kk	  = kk - 1;
+        end
+
+        if all(~msbfirst) || strcmpi(msbfirst,'right-msb')
+          y(i,:) = fliplr(y(i,:));
+        end
+      end
     end
   end %% methods helper
 
